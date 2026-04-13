@@ -33,7 +33,7 @@ TEST_QUESTIONS_PATH = Path(__file__).parent / "data" / "grading_questions.json"
 RESULTS_DIR = Path(__file__).parent / "results"
 LOGS_DIR = Path(__file__).parent / "logs"
 
-# Cấu hình baseline (Sprint 2)
+# Cấu hình baseline
 BASELINE_CONFIG = {
     "retrieval_mode": "dense",
     "top_k_search": 10,
@@ -42,7 +42,7 @@ BASELINE_CONFIG = {
     "label": "baseline_dense",
 }
 
-# Cấu hình variant (Sprint 3 — Hybrid Retrieval)
+# Cấu hình variant
 VARIANT_CONFIG = {
     "retrieval_mode": "hybrid",
     "top_k_search": 10,
@@ -54,7 +54,6 @@ VARIANT_CONFIG = {
 
 # =============================================================================
 # SCORING FUNCTIONS
-# 4 metrics từ slide: Faithfulness, Answer Relevance, Context Recall, Completeness
 # =============================================================================
 
 def score_faithfulness(
@@ -65,23 +64,21 @@ def score_faithfulness(
     Faithfulness: Câu trả lời có bám đúng chứng cứ đã retrieve không?
     """
     if not chunks_used:
-        # Xử lý trường hợp Abstain (Không đủ dữ liệu) một cách triệt để
         if "không đủ dữ liệu" in answer.lower():
             return {"score": 5, "notes": "Hệ thống trung thực trả lời không đủ dữ liệu khi không có context."}
         return {"score": 1, "notes": "Không có context nhưng mô hình vẫn cố trả lời (Ảo giác)."}
 
     context = "\n\n".join([f"[{i+1}] {c['text']}" for i, c in enumerate(chunks_used)])
     
-    # Áp dụng Google Prompting Essentials Framework
-    prompt = f"""Bạn là một chuyên gia AI Quality Assurance (AI Audit) vô cùng khắt khe, chuyên kiểm định lỗi ảo giác (hallucination) của hệ thống RAG tại các tập đoàn công nghệ lớn. (Persona)
+    prompt = f"""Bạn là một chuyên gia AI quality assurance (AI audit) khắt khe, chuyên kiểm định hallucination của hệ thống RAG tại các tập đoàn công nghệ lớn. (Persona)
 
 [NHIỆM VỤ - Task]
-Đánh giá mức độ 'Trung thực' (Faithfulness) của Câu trả lời do AI sinh ra. Định dạng đầu ra bắt buộc là JSON.
+Đánh giá mức độ Faithfulness của câu trả lời do AI sinh ra. Định dạng đầu ra bắt buộc là JSON.
 
-[BỐI CẢNH & RÀNG BUỘC - Context & Constraints]
-- 'Trung thực' nghĩa là mọi thông tin, con số, định nghĩa trong Câu trả lời đều phải được tìm thấy hoặc suy ra trực tiếp từ Context được cung cấp.
-- RÀNG BUỘC TUYỆT ĐỐI: Không sử dụng kiến thức bên ngoài của bạn. Nếu Câu trả lời có vẻ đúng với thực tế nhưng thông tin đó KHÔNG CÓ trong Context, bạn PHẢI đánh giá là ảo giác (1 điểm).
-- Việc hệ thống trả lời "Không đủ dữ liệu" khi Context thực sự không chứa câu trả lời được coi là hành vi cực kỳ an toàn và trung thực tuyệt đối (5 điểm).
+[BỐI CẢNH & RÀNG BUỘC - Context & constraints]
+- Faithfulness nghĩa là mọi thông tin, con số, định nghĩa trong câu trả lời đều phải được tìm thấy hoặc suy ra trực tiếp từ context được cung cấp.
+- RÀNG BUỘC TUYỆT ĐỐI: Không sử dụng kiến thức bên ngoài của bạn. Nếu câu trả lời có vẻ đúng với thực tế nhưng thông tin đó KHÔNG CÓ trong context, bạn PHẢI đánh giá là ảo giác (1 điểm).
+- Việc hệ thống trả lời "Không đủ dữ liệu" khi Context thực sự không chứa câu trả lời được coi là trung thực (5 điểm).
 
 [VÍ DỤ ĐỐI CHIẾU - References]
 - Ví dụ 1:
@@ -127,15 +124,15 @@ def score_answer_relevance(
     """
     Answer Relevance: Answer có trả lời đúng câu hỏi người dùng hỏi không?
     """
-    prompt = f"""Bạn là một chuyên gia AI Quality Assurance (AI Audit) chuyên kiểm định chất lượng hệ thống RAG tại các tập đoàn công nghệ lớn. (Persona)
+    prompt = f"""Bạn là một chuyên gia AI quality assurance (AI audit) chuyên kiểm định chất lượng hệ thống RAG tại các tập đoàn công nghệ lớn. (Persona)
 
 [NHIỆM VỤ - Task]
 Đánh giá mức độ 'Liên quan' và 'Đúng trọng tâm' (Answer Relevance) của Câu trả lời đối với Câu hỏi của người dùng. Định dạng đầu ra bắt buộc là JSON.
 
 [BỐI CẢNH & RÀNG BUỘC - Context & Constraints]
 - 'Relevance' CHỈ đánh giá việc câu trả lời có đi thẳng vào vấn đề của câu hỏi hay không. Nó không đánh giá việc câu trả lời có đúng sự thật hay không (đó là việc của metric khác).
-- RÀNG BUỘC QUAN TRỌNG: Nếu Câu trả lời là "Không đủ dữ liệu" (Abstain), điều này có nghĩa là hệ thống RAG đang hoạt động đúng thiết kế khi không tìm thấy thông tin. Đây là một câu trả lời HOÀN TOÀN LIÊN QUAN và ĐÚNG TRỌNG TÂM đối với tình trạng của hệ thống. Bắt buộc chấm 5 điểm cho trường hợp này.
-- Trừ điểm nặng đối với các câu trả lời vòng vo, copy lại toàn bộ tài liệu mà không chắt lọc ý, hoặc đưa ra thông tin thừa thãi không được hỏi.
+- RÀNG BUỘC QUAN TRỌNG: Nếu câu trả lời là "Không đủ dữ liệu" (Abstain), điều này có nghĩa là hệ thống RAG đang hoạt động đúng thiết kế khi không tìm thấy thông tin. Đây là một câu trả lời liên quan và đúng trọng tâm đối với tình trạng của hệ thống. Chấm 5 điểm cho các trường hợp này.
+- Trừ điểm đối với các câu trả lời vòng vo, copy lại toàn bộ tài liệu mà không chắt lọc ý, hoặc đưa ra thông tin thừa thãi không được hỏi.
 
 [VÍ DỤ ĐỐI CHIẾU - References]
 - Ví dụ 1:
@@ -177,7 +174,7 @@ def score_context_recall(
     expected_sources: List[str],
 ) -> Dict[str, Any]:
     """
-    Context Recall: Retriever có mang về đủ evidence cần thiết không?
+    Context recall: Retriever có mang về đủ evidence cần thiết không?
     Câu hỏi: Expected source có nằm trong retrieved chunks không?
 
     Đây là metric đo retrieval quality, không phải generation quality.
@@ -204,7 +201,6 @@ def score_context_recall(
         for c in chunks_used
     }
 
-    # TODO: Kiểm tra matching theo partial path (vì source paths có thể khác format)
     found = 0
     missing = []
     for expected in expected_sources:
@@ -239,16 +235,16 @@ def score_completeness(
     if not expected_answer:
         return {"score": 5, "notes": "Không có câu trả lời mẫu để đối chiếu."}
 
-    prompt = f"""Bạn là một chuyên gia AI Quality Assurance (AI Audit) chuyên đánh giá các hệ thống RAG tại các tập đoàn công nghệ lớn. (Persona)
+    prompt = f"""Bạn là một chuyên gia AI quality assurance (AI audit) chuyên đánh giá các hệ thống RAG tại các tập đoàn công nghệ lớn. (Persona)
 
 [NHIỆM VỤ - Task]
-Đánh giá mức độ 'Đầy đủ' (Completeness) của câu trả lời thực tế so với câu trả lời mẫu (Gold Answer). Định dạng đầu ra bắt buộc là JSON.
+Đánh giá mức độ Completeness của câu trả lời thực tế so với câu trả lời mẫu. Định dạng đầu ra bắt buộc là JSON.
 
 [BỐI CẢNH & RÀNG BUỘC - Context & Constraints]
-- 'Completeness' (Độ đầy đủ) đo lường việc Câu trả lời thực tế có chứa tất cả các thông tin, ý chính và chi tiết quan trọng được nêu trong Câu trả lời mẫu hay không.
-- KHÔNG trừ điểm nếu Câu trả lời thực tế diễn đạt bằng từ ngữ khác (đồng nghĩa) hoặc nếu nó cung cấp nhiều thông tin hơn câu trả lời mẫu (miễn là thông tin thêm đó không mâu thuẫn).
+- Completeness đo lường việc câu trả lời thực tế có chứa tất cả các thông tin, ý chính và chi tiết quan trọng được nêu trong câu trả lời mẫu hay không.
+- KHÔNG trừ điểm nếu câu trả lời thực tế diễn đạt bằng từ ngữ khác (đồng nghĩa) hoặc nếu nó cung cấp nhiều thông tin hơn câu trả lời mẫu (miễn là thông tin thêm đó không mâu thuẫn).
 - Nếu câu trả lời mẫu là "Không đủ dữ liệu" (hoặc tương đương), câu trả lời thực tế cũng phải từ chối trả lời mới đạt 5 điểm. 
-- Nếu câu trả lời thực tế là "Không đủ dữ liệu" (Abstain) nhưng câu trả lời mẫu lại có chứa thông tin cụ thể, bắt buộc chấm 1 điểm vì đã bỏ sót hoàn toàn thông tin cần tìm.
+- Nếu câu trả lời thực tế là "Không đủ dữ liệu" (abstain) nhưng câu trả lời mẫu lại có chứa thông tin cụ thể, bắt buộc chấm 1 điểm vì đã bỏ sót hoàn toàn thông tin cần tìm.
 
 [VÍ DỤ ĐỐI CHIẾU - References]
 - Ví dụ 1:
@@ -267,7 +263,7 @@ def score_completeness(
 [DỮ LIỆU ĐÁNH GIÁ]
 Câu hỏi: {query}
 
-Câu trả lời mẫu (Gold Answer): {expected_answer}
+Câu trả lời mẫu: {expected_answer}
 
 Câu trả lời thực tế của hệ thống: {answer}
 
@@ -358,7 +354,6 @@ def run_scorecard(
             answer = f"ERROR: {e}"
             chunks_used = []
 
-        # --- Chấm điểm ---
         faith = score_faithfulness(answer, chunks_used)
         relevance = score_answer_relevance(query, answer)
         recall = score_context_recall(chunks_used, expected_sources)
@@ -387,7 +382,6 @@ def run_scorecard(
             print(f"  Faithful: {faith['score']} | Relevant: {relevance['score']} | "
                   f"Recall: {recall['score']} | Complete: {complete['score']}")
 
-    # Tính averages (bỏ qua None)
     for metric in ["faithfulness", "relevance", "context_recall", "completeness"]:
         scores = [r[metric] for r in results if r[metric] is not None]
         avg = sum(scores) / len(scores) if scores else None
@@ -445,7 +439,6 @@ def compare_ab(
 
         print(f"{metric:<20} {b_str:>10} {v_str:>10} {d_str:>8}")
 
-    # Per-question comparison
     print(f"\n{'Câu':<6} {'Baseline F/R/Rc/C':<22} {'Variant F/R/Rc/C':<22} {'Better?':<10}")
     print("-" * 65)
 
@@ -524,7 +517,7 @@ Generated: {timestamp}
 
 
 # =============================================================================
-# MAIN — Chạy evaluation
+# MAIN
 # =============================================================================
 
 if __name__ == "__main__":
@@ -532,14 +525,12 @@ if __name__ == "__main__":
     print("Sprint 4: Evaluation & Scorecard")
     print("=" * 60)
 
-    # Kiểm tra test questions
     print(f"\nLoading test questions từ: {TEST_QUESTIONS_PATH}")
     try:
         with open(TEST_QUESTIONS_PATH, "r", encoding="utf-8") as f:
             test_questions = json.load(f)
         print(f"Tìm thấy {len(test_questions)} câu hỏi")
 
-        # In preview
         for q in test_questions[:3]:
             print(f"  [{q['id']}] {q['question']} ({q['category']})")
         print("  ...")
@@ -548,7 +539,6 @@ if __name__ == "__main__":
         print("Không tìm thấy file test_questions.json!")
         test_questions = []
 
-    # --- Chạy Baseline ---
     print("\n--- Chạy Baseline ---")
     print("Lưu ý: Cần hoàn thành Sprint 2 trước khi chạy scorecard!")
     try:
@@ -569,7 +559,6 @@ if __name__ == "__main__":
         print("Pipeline chưa implement. Hoàn thành Sprint 2 trước.")
         baseline_results = []
 
-    # --- Chạy Variant (sau khi Sprint 3 hoàn thành) ---
     print("\n--- Chạy Variant ---")
     try:
         variant_results = run_scorecard(
@@ -581,7 +570,6 @@ if __name__ == "__main__":
         (RESULTS_DIR / "scorecard_variant.md").write_text(variant_md, encoding="utf-8")
         print(f"\nScorecard Variant lưu tại: {RESULTS_DIR / 'scorecard_variant.md'}")
 
-        # --- A/B Comparison ---
         if baseline_results and variant_results:
             compare_ab(
                 baseline_results,
@@ -589,7 +577,6 @@ if __name__ == "__main__":
                 output_csv="ab_comparison.csv"
             )
 
-        # --- Lưu grading_run.json cho BTC ---
         LOGS_DIR.mkdir(parents=True, exist_ok=True)
         grading_data = {
             "timestamp": datetime.now().isoformat(),
