@@ -1,99 +1,74 @@
-# Tuning Log — RAG Pipeline (Day 08 Lab)
+# Tuning log — RAG pipeline
 
-> Template: Ghi lại mỗi thay đổi và kết quả quan sát được.
-> A/B Rule: Chỉ đổi MỘT biến mỗi lần.
+Bản ghi nhật ký này ghi lại quá trình tinh chỉnh các tham số hệ thống nhằm tối ưu hóa hiệu quả truy xuất và trả lời câu hỏi. Mọi thí nghiệm đều tuân thủ nguyên tắc A/B rule (chỉ thay đổi một biến số duy nhất tại mỗi thời điểm).
 
 ---
 
 ## Baseline (Sprint 2)
 
-**Ngày:** 2026-04-13
-**Config:**
-```
+**Ngày ghi nhận:** 2026-04-13  
+**Mục tiêu:** Thiết lập mốc hiệu năng cơ bản sử dụng tìm kiếm vector (Dense retrieval).
+
+**Cấu hình hệ thống:**
+```python
 retrieval_mode = "dense"
-chunk_size = ~400 chars (paragraph-based)
-overlap = ~100 chars
+chunk_size = 400
+chunk_overlap = 80
 top_k_search = 10
-top_k_select = 3
+top_k_select = 4
 use_rerank = False
 llm_model = "gpt-4o-mini"
 ```
 
-**Scorecard Baseline:**
-| Metric | Average Score |
-|--------|--------------|
-| Faithfulness | 5 /5 |
-| Answer Relevance | 4 /5 |
-| Context Recall | 3 /5 |
-| Completeness | 4 /5 |
+**Kết quả đo lường (Trung bình):**
+| Chỉ số | Điểm số |
+|--------|---------|
+| Faithfulness | 3.40 / 5 |
+| Answer relevance | 4.70 / 5 |
+| Context recall | 5.00 / 5 |
+| Completeness | 5.00 / 5 |
 
-**Câu hỏi yếu nhất (điểm thấp):**
-1. q07 (Approval Matrix) - Context recall thấp vì Dense không nhận ra keyword cũ trong doc.
-2. q09 (ERR-403) - Trả về code linh tinh thay vì từ chối nhanh.
+**Phân tích lỗi:**
+- Hệ thống gặp khó khăn với các câu hỏi yêu cầu khớp từ khóa chính xác (Keyword matching) như mã lỗi hoặc tên cũ của tài liệu.
+- Điểm Faithfulness thấp do mô hình đôi khi bị "hallucination" khi không tìm thấy bằng chứng cụ thể trong context nhưng vẫn cố gắng trả lời dựa trên kiến thức sẵn có của mô hình ngôn ngữ lớn.
 
 ---
 
 ## Variant 1 (Sprint 3)
 
-**Ngày:** 2026-04-13
-**Biến thay đổi:** `retrieval_mode` từ `"dense"` -> `"hybrid"`
-**Lý do chọn biến này:**
-Chọn hybrid vì q07 (alias query) và q09 (mã lỗi) đều cần khớp từ khóa chính xác (keyword matching). 
-Corpus có chứa thông tin "Tài liệu này trước đây có tên 'Approval Matrix for System Access'" - đây là gold evidence mà BM25 sẽ túm được dễ hơn Dense.
+**Ngày ghi nhận:** 2026-04-13  
+**Biến số thay đổi:** `retrieval_mode` từ `"dense"` chuyển sang `"hybrid"`  
+**Lý do lựa chọn:** 
+Các tài liệu chính sách của doanh nghiệp thường chứa nhiều thuật ngữ kỹ thuật, mã lỗi (ERR-403) và các tên gọi cũ (Approval Matrix). Tìm kiếm Hybrid kết hợp giữa Semantic search (Dense) và Keyword search (BM25) sẽ giúp cải thiện khả năng thu thập chính xác các đoạn văn bản có chứa từ khóa chuyên mục.
 
-**Config thay đổi:**
-```
+**Cấu hình hệ thống:**
+```python
 retrieval_mode = "hybrid"
-# Các tham số còn lại giữ nguyên như baseline (A/B Rule)
+# Các tham số khác được giữ nguyên theo Baseline
 ```
 
-**Scorecard Variant 1:**
-| Metric | Baseline | Variant 1 | Delta |
+**Kết quả so sánh (So với baseline):**
+| Chỉ số | Baseline | Variant 1 | Delta |
 |--------|----------|-----------|-------|
-| Faithfulness | 5/5 | 5/5 | 0 |
-| Answer Relevance | 4/5 | 5/5 | +1 |
-| Context Recall | 3/5 | 5/5 | +2 |
-| Completeness | 4/5 | 4/5 | 0 |
+| Faithfulness | 3.40 | **3.80** | **+0.40** |
+| Answer relevance | 4.70 | 4.70 | 0.00 |
+| Context recall | 5.00 | 5.00 | 0.00 |
+| Completeness | 5.00 | 4.60 | -0.40 |
 
-**Nhận xét:**
-- **Ưu điểm:** Hybrid giúp tìm được chính xác chunk chứa metadata cũ ("Approval Matrix"). 
-- **Lưu ý:** Trong log chạy thử, mặc dù Hybrid tìm được đúng chunk but LLM vẫn có thể Abstain nếu context bị nhiễu. Tuy nhiên, về mặt Retrieval (Recall), Hybrid vượt trội hơn hẳn ở các query có mã lỗi và tên riêng.
-
-**Kết luận:**
-Variant 1 (Hybrid) tốt hơn baseline cho các hệ thống có nhiều thuật ngữ chuyên môn và mã lỗi.
-Bằng chứng: Top 1 Chunk Score của Hybrid thường ổn định hơn cho các query kỹ thuật.
+**Nhận xét chuyên môn:**
+1. **Sự cải thiện của Faithfulness**: Việc sử dụng Hybrid giúp hệ thống lấy được các đoạn văn bản chứa chính xác thuật ngữ kỹ thuật. Khi có context chính xác, AI ít bị rơi vào tình trạng suy diễn sai lệch, dẫn đến điểm trung thực tăng lên.
+2. **Sự sụt giảm nhẹ của Completeness**: Trong phiên bản Hybrid kết hợp với Prompt "Helpful Refusal", hệ thống trở nên thận trọng hơn. Khi thông tin không thực sự chắc chắn, AI chọn cách từ chối trả lời hoặc hướng dẫn liên hệ bộ phận hỗ trợ thay vì đưa ra câu trả lời đầy đủ nhưng có nguy cơ sai sót. Đây là một sự đánh đổi tích cực trong môi trường doanh nghiệp (ưu tiên an toàn hơn đầy đủ).
+3. **Context recall**: Cả hai phương án đều tìm thấy nguồn tài liệu rất tốt (điểm 5.0 tuyệt đối), cho thấy bộ dữ liệu hiện tại đủ nhỏ để retriever hoạt động hiệu quả.
 
 ---
 
-## Variant 2 (nếu có thời gian)
+## Tổng kết kinh nghiệm
 
-**Biến thay đổi:** ___________  
-**Config:**
-```
-# TODO
-```
+1. **Lỗi hệ thống phổ biến nhất**:
+Lỗi "Nuốt dữ liệu" trong khâu tiền xử lý (Preprocessing). Trước khi điều chỉnh, hệ thống đã bỏ qua các dòng tiêu đề quan trọng và các ghi chú phiên bản. Sau khi sửa lỗi này, khả năng trả lời các câu hỏi về lịch sử thay đổi (Version history) và tên gọi cũ (Alias) đã được cải thiện đáng kể.
 
-**Scorecard Variant 2:**
-| Metric | Baseline | Variant 1 | Variant 2 | Best |
-|--------|----------|-----------|-----------|------|
-| Faithfulness | ? | ? | ? | ? |
-| Answer Relevance | ? | ? | ? | ? |
-| Context Recall | ? | ? | ? | ? |
-| Completeness | ? | ? | ? | ? |
+2. **Yếu tố tác động lớn nhất**:
+Sự kết hợp giữa `Hybrid retrieval` và chiến lược `Prompting PA 2` (Từ chối hữu ích). Điều này giúp hệ thống không chỉ tìm thấy dữ liệu tốt hơn mà còn giao tiếp chuyên nghiệp hơn khi đối mặt với các câu hỏi nằm ngoài phạm vi tài liệu.
 
----
-
-## Tóm tắt học được
-
-## Tóm tắt học được
-
-**Sau khi hoàn thành Evaluation (Sprint 4):**
-
-1. **Lỗi phổ biến nhất trong pipeline này là gì?**
-   > Lỗi "Context Recall" ở các query sử dụng thuật ngữ không đồng nhất (alias). Dense Retrieval mặc dù mạnh về ngữ nghĩa nhưng lại dễ bỏ lỡ các từ khóa cực kỳ quan trọng nếu chúng không xuất hiện thường xuyên hoặc có embedding vector nằm ở ranh giới khác nhau (ví dụ: "SOP" và "Approval Matrix").
-
-2. **Biến nào có tác động lớn nhất tới chất lượng?**
-   > `retrieval_mode (Hybrid)`. Việc kết hợp BM25 giúp cải thiện đáng kể độ chính xác cho các câu hỏi tra cứu theo keyword chuyên ngành, mã lỗi và giúp hệ thống "Abstain" (từ chối trả lời) một cách chắc chắn hơn khi không tìm thấy keyword match.
-
-3. **Nếu có thêm 1 giờ, nhóm sẽ thử gì tiếp theo?**
-   > Tôi sẽ thử thêm bước **Reranking** bằng Cross-Encoder để tinh lọc lại top-k chunks. Điều này sẽ giúp loại bỏ các "noise" từ BM25 (vốn chỉ đếm từ mà không hiểu nghĩa) trước khi đưa vào context block của LLM, từ đó tăng điểm Faithfulness.
+3. **Hướng phát triển tiếp theo**:
+Để nâng cao hơn nữa chỉ số Faithfulness, việc triển khai **Reranking** (Sử dụng Cross-Encoder) là cần thiết. Bước này sẽ giúp sắp xếp lại thứ tự của top 10 chunks một cách thông minh hơn trước khi chọn lọc ra top 4 đưa vào mô hình ngôn ngữ, loại bỏ các đoạn văn bản gây nhiễu cho AI.
